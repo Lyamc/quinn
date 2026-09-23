@@ -32,6 +32,8 @@ rustls-aws-lc-rs = ["dep:rustls", "aws-lc-rs", "proto/rustls-aws-lc-rs", "proto/
 rustls-aws-lc-rs-fips = ["dep:rustls", "aws-lc-rs-fips", "proto/rustls-aws-lc-rs-fips", "proto/aws-lc-rs-fips"]
 # Enable rustls with the `ring` crypto provider
 rustls-ring = ["dep:rustls", "ring", "proto/rustls-ring", "proto/ring"]
+# rustls with a caller-installed CryptoProvider. Does not pull ring or aws-lc.
+rustls-pure = ["dep:rustls", "proto/rustls-pure"]
 # Enable the `ring` crypto provider.
 # Outside wasm*-unknown-unknown targets, this enables `Endpoint::client` and `Endpoint::server` conveniences.
 ring = ["proto/ring"]

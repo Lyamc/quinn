@@ -17,11 +17,22 @@ use crate::{
     transport_parameters::TransportParameters,
 };
 
-/// Cryptography interface based on *ring*
+/// Cryptography interface based on *ring* or aws-lc
 #[cfg(any(feature = "aws-lc-rs", feature = "ring"))]
 pub(crate) mod ring_like;
+/// HMAC / HKDF / AES-GCM without ring or aws-lc
+#[cfg(all(
+    feature = "rustls-pure",
+    not(feature = "ring"),
+    not(feature = "aws-lc-rs")
+))]
+pub(crate) mod pure_like;
 /// TLS interface based on rustls
-#[cfg(any(feature = "rustls-aws-lc-rs", feature = "rustls-ring"))]
+#[cfg(any(
+    feature = "rustls-aws-lc-rs",
+    feature = "rustls-ring",
+    feature = "rustls-pure"
+))]
 pub mod rustls;
 
 /// A cryptographic session (commonly TLS)

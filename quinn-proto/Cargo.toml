@@ -25,6 +25,9 @@ rustls-aws-lc-rs = ["dep:rustls", "rustls?/aws-lc-rs", "aws-lc-rs"]
 rustls-aws-lc-rs-fips = ["rustls-aws-lc-rs", "aws-lc-rs-fips"]
 # Enable rustls with the `ring` crypto provider
 rustls-ring = ["dep:rustls", "rustls?/ring", "ring"]
+# rustls with a caller-installed CryptoProvider (no ring, no aws-lc, no cc).
+# Install the provider with `rustls::crypto::CryptoProvider::install_default` before use.
+rustls-pure = ["dep:rustls", "dep:aes-gcm", "dep:hmac", "dep:sha2", "dep:hkdf"]
 ring = ["dep:ring"]
 # Enable rustls ring provider and direct ring usage
 # Provides `ClientConfig::with_platform_verifier()` convenience method
@@ -42,13 +45,17 @@ qlog = ["dep:qlog"]
 __rustls-post-quantum-test =  []
 
 [dependencies]
+aes-gcm = { workspace = true, optional = true, features = ["aes", "alloc"] }
 arbitrary = { workspace = true, optional = true }
 aws-lc-rs = { workspace = true, optional = true }
 bytes = { workspace = true }
 fastbloom = { workspace = true, optional = true }
+hkdf = { workspace = true, optional = true }
+hmac = { workspace = true, optional = true }
 lru-slab = { workspace = true }
 qlog = { workspace = true, optional = true }
 rustc-hash = { workspace = true }
+sha2 = { workspace = true, optional = true }
 rand = { workspace = true }
 rand_pcg = "0.10"
 ring = { workspace = true, optional = true }

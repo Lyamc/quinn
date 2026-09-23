@@ -201,11 +201,23 @@ impl crypto::Session for TlsSession {
             _ => unreachable!(),
         };
 
-        let nonce = aead::Nonce::assume_unique_for_key(nonce);
-        let key = aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_128_GCM, &key).unwrap());
-
-        let (aad, tag) = pseudo_packet.split_at_mut(tag_start);
-        key.open_in_place(nonce, aead::Aad::from(aad), tag).is_ok()
+        #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+        {
+            let nonce = aead::Nonce::assume_unique_for_key(nonce);
+            let key =
+                aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_128_GCM, &key).unwrap());
+            let (aad, tag) = pseudo_packet.split_at_mut(tag_start);
+            return key.open_in_place(nonce, aead::Aad::from(aad), tag).is_ok();
+        }
+        #[cfg(all(
+            feature = "rustls-pure",
+            not(feature = "ring"),
+            not(feature = "aws-lc-rs")
+        ))]
+        {
+            let (aad, tag) = pseudo_packet.split_at_mut(tag_start);
+            return super::pure_like::aes128_gcm_open_tag(&key, &nonce, aad, tag);
+        }
     }
 
     fn export_keying_material(
@@ -567,15 +579,26 @@ impl crypto::ServerConfig for QuicServerConfig {
         pseudo_packet.extend_from_slice(&orig_dst_cid);
         pseudo_packet.extend_from_slice(packet);
 
-        let nonce = aead::Nonce::assume_unique_for_key(nonce);
-        let key = aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_128_GCM, &key).unwrap());
-
-        let tag = key
-            .seal_in_place_separate_tag(nonce, aead::Aad::from(pseudo_packet), &mut [])
-            .unwrap();
-        let mut result = [0; 16];
-        result.copy_from_slice(tag.as_ref());
-        result
+        #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+        {
+            let nonce = aead::Nonce::assume_unique_for_key(nonce);
+            let key =
+                aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_128_GCM, &key).unwrap());
+            let tag = key
+                .seal_in_place_separate_tag(nonce, aead::Aad::from(pseudo_packet), &mut [])
+                .unwrap();
+            let mut result = [0; 16];
+            result.copy_from_slice(tag.as_ref());
+            return result;
+        }
+        #[cfg(all(
+            feature = "rustls-pure",
+            not(feature = "ring"),
+            not(feature = "aws-lc-rs")
+        ))]
+        {
+            return super::pure_like::aes128_gcm_seal_tag(&key, &nonce, &pseudo_packet);
+        }
     }
 }
 
@@ -593,11 +616,24 @@ pub(crate) fn initial_suite_from_provider(
 }
 
 pub(crate) fn configured_provider() -> Arc<rustls::crypto::CryptoProvider> {
-    #[cfg(all(feature = "rustls-aws-lc-rs", not(feature = "rustls-ring")))]
-    let provider = rustls::crypto::aws_lc_rs::default_provider();
     #[cfg(feature = "rustls-ring")]
-    let provider = rustls::crypto::ring::default_provider();
-    Arc::new(provider)
+    {
+        return Arc::new(rustls::crypto::ring::default_provider());
+    }
+    #[cfg(all(feature = "rustls-aws-lc-rs", not(feature = "rustls-ring")))]
+    {
+        return Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    }
+    #[cfg(all(
+        feature = "rustls-pure",
+        not(feature = "rustls-ring"),
+        not(feature = "rustls-aws-lc-rs")
+    ))]
+    {
+        return rustls::crypto::CryptoProvider::get_default()
+            .expect("rustls-pure requires CryptoProvider::install_default before building a config")
+            .clone();
+    }
 }
 
 fn to_vec(params: &TransportParameters) -> Vec<u8> {

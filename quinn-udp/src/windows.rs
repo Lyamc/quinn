@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-use libc::{c_int, c_uint};
+use std::ffi::{c_int, c_uint};
 use windows_sys::Win32::Networking::WinSock;
 
 use crate::{
