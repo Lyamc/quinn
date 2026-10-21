@@ -637,6 +637,35 @@ impl Connection {
             .clone_box()
     }
 
+    /// Replace this connection's CUBIC window, initial RTT, and ACK delay.
+    /// Other connections on the same endpoint keep the config they opened with.
+    pub fn retune_cubic(
+        &self,
+        initial_rtt: Duration,
+        initial_window: u64,
+        max_ack_delay: Duration,
+        ack_eliciting: u32,
+    ) {
+        let mut conn = self.0.state.lock("retune_cubic");
+        conn.inner.retune_cubic(
+            Instant::now(),
+            initial_rtt,
+            initial_window,
+            max_ack_delay,
+            ack_eliciting,
+        );
+        conn.wake();
+    }
+
+    /// `max_ack_delay` this connection will request, when ACK frequency is set.
+    pub fn configured_max_ack_delay(&self) -> Option<Duration> {
+        self.0
+            .state
+            .lock("configured_max_ack_delay")
+            .inner
+            .configured_max_ack_delay()
+    }
+
     /// Succeeds when an incoming connection is proven not to be a replay attack.
     ///
     /// Only interesting for `Connection`s obtained from [`Connecting::into_0rtt`]. On 1-RTT

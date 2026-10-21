@@ -217,6 +217,8 @@ pub struct Connection {
     // ACK frequency
     //
     ack_frequency: AckFrequencyState,
+    /// Replaces `config.ack_frequency_config` for this connection only.
+    ack_frequency_override: Option<crate::AckFrequencyConfig>,
 
     //
     // Loss Detection
@@ -343,6 +345,7 @@ impl Connection {
             ack_frequency: AckFrequencyState::new(get_max_ack_delay(
                 &TransportParameters::default(),
             )),
+            ack_frequency_override: None,
             next_bundled_ack_time: None,
 
             pto_count: 0,
@@ -523,7 +526,7 @@ impl Connection {
         };
 
         // Check whether we need to send an ACK_FREQUENCY frame
-        if let Some(config) = &self.config.ack_frequency_config {
+        if let Some(config) = self.ack_frequency_settings() {
             self.spaces[SpaceId::Data].pending.ack_frequency = self
                 .ack_frequency
                 .should_send_ack_frequency(self.path.rtt.get(), config, &self.peer_params)
@@ -1455,6 +1458,39 @@ impl Connection {
     pub fn path_changed(&mut self, now: Instant) {
         self.path.reset(now, &self.config);
         self.datagrams().drop_oversized();
+    }
+
+    /// Install CUBIC, the initial RTT, and the ACK delay on this connection.
+    /// The endpoint's shared [`TransportConfig`] is left alone.
+    pub fn retune_cubic(
+        &mut self,
+        now: Instant,
+        initial_rtt: Duration,
+        initial_window: u64,
+        max_ack_delay: Duration,
+        ack_eliciting: u32,
+    ) {
+        use crate::congestion::ControllerFactory;
+        let mut cubic = crate::congestion::CubicConfig::default();
+        cubic.initial_window(initial_window);
+        let controller = Arc::new(cubic).build(now, self.path.current_mtu());
+        let cap = self.config.max_outgoing_bytes_per_second;
+        self.path.retune(now, initial_rtt, controller, cap);
+        let mut ack = crate::AckFrequencyConfig::default();
+        ack.max_ack_delay(Some(max_ack_delay));
+        ack.ack_eliciting_threshold(VarInt::from_u32(ack_eliciting));
+        self.ack_frequency_override = Some(ack);
+    }
+
+    /// Configured `max_ack_delay` for this connection, when ACK frequency is set.
+    pub fn configured_max_ack_delay(&self) -> Option<Duration> {
+        self.ack_frequency_settings().and_then(|cfg| cfg.max_ack_delay)
+    }
+
+    fn ack_frequency_settings(&self) -> Option<&crate::AckFrequencyConfig> {
+        self.ack_frequency_override
+            .as_ref()
+            .or(self.config.ack_frequency_config.as_ref())
     }
 
     /// Modify the number of remotely initiated streams that may be concurrently open
@@ -3292,8 +3328,13 @@ impl Connection {
         if mem::replace(&mut space.pending.ack_frequency, false) {
             let sequence_number = self.ack_frequency.next_sequence_number();
 
-            // Safe to unwrap because this is always provided when ACK frequency is enabled
-            let config = self.config.ack_frequency_config.as_ref().unwrap();
+            // Safe to unwrap because this is always provided when ACK frequency is enabled.
+            // Field borrows stay disjoint from `space`.
+            let config = self
+                .ack_frequency_override
+                .as_ref()
+                .or(self.config.ack_frequency_config.as_ref())
+                .unwrap();
 
             // Ensure the delay is within bounds to avoid a PROTOCOL_VIOLATION error
             let max_ack_delay = self.ack_frequency.candidate_max_ack_delay(

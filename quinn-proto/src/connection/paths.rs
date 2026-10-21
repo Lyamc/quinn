@@ -143,6 +143,25 @@ impl PathData {
         }
     }
 
+    pub(super) fn retune(
+        &mut self,
+        now: Instant,
+        initial_rtt: Duration,
+        congestion: Box<dyn congestion::Controller>,
+        max_bytes_per_second: Option<u64>,
+    ) {
+        let mtu = self.current_mtu();
+        self.rtt = RttEstimator::new(initial_rtt);
+        self.pacing = Pacer::new(
+            initial_rtt,
+            congestion.initial_window(),
+            mtu,
+            max_bytes_per_second,
+            now,
+        );
+        self.congestion = congestion;
+    }
+
     /// Resets RTT, congestion control, pacing and MTU states.
     ///
     /// This is useful when it is known the underlying path has changed.
